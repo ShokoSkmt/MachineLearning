@@ -1,0 +1,86 @@
+---
+2output: html_document
+---
+##Practical Machine Learning - Project
+###Summary
+We rarely quantify how well we do a particular activity. In this project, we use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. Here, I find the model that predicts "classe" from other variables. After cleaning data, 52 variables were chosen as predicters. At first, "Decision Tree" algorithm was applied to training data set, but the accuracy was very low. Next, "Random Forest" algorithm was applied to training data set. In cross-validation, out of sample error was significantly low, then "Random Forest" algorithm was chosen to predict 20 of testing data.
+
+**1.Load Data and Cleaning data** 
+
+Download and Data Cleaning process.
+
+```{r pml1, echo=TRUE, results='hide',message=FALSE}
+download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", ".\\data\\pml-training.csv")
+rtrain <-  read.csv(".\\data\\pml-training.csv",na.strings=c('','NA','#DIV/0!'))
+nan <- sapply(rtrain, function(x) length(x[is.na(x)]))
+gvar <- names(nan[nan==0])
+rtrain2 <- rtrain[,which(names(rtrain) %in% gvar)]
+unique(substr(as.character(rtrain2$cvtd_timestamp),12, 13))
+
+```
+- Load data as NA for ('','NA','#DIV/0!')
+- Exclude columns which have NA. The total number of NA of each column which has NA is extremely high, therefore it cannot be imputed.
+- Exclude columns of non-measured data (x, user_name, new_window, num_window)
+- Exclude timestamp data since time is only `r unique(substr(as.character(rtrain2$cvtd_timestamp),12, 13))`  In this case, timestamp cannot be predicter.
+
+Here is the total number of training data by classe. 
+```{r pml2, echo=TRUE, results='show'}
+tapply(rtrain$X,rtrain$classe, length )
+```
+
+There are 52 measures which are used as predicters. Data was collected in the places of the body
+- belt
+- forearm
+- arm
+- dumbell
+And under each category, there are 13 measured data.
+- roll, pitch, yaw, total_accel 
+- gyros_x, gyros_y, gyros_z 
+- accel_x, accel_y, accel_z 
+- magnet_x, magnet_y, magnet_z data
+
+**2. Model selection**
+
+Outcome is classification (Level: A B C D E F). At first, "Decision Tree" algorithm was applied. In **train** function, cross-validation was set as 10 K-fold and repeat 10 times. As a result, the Accuracy measure is very low. This means that out of Sample error is likely to be high. 
+```{r pml3, echo=TRUE, results='hide', warning=FALSE,message=FALSE}
+library(caret)
+library(kernlab)
+library(randomForest)
+fitControl <- trainControl(method = "repeatedcv",
+  number = 10, repeats = 2)
+fit <- train(rtrain3$classe ~ ., method='rpart', trControl = fitControl, data=rtrain3)
+```
+```{r pml4, echo=TRUE, results='show'}
+print(fit$finalModel)
+paste("Accuracy:", round(100*fit$result[1,2],2), "%") 
+```
+
+Next "Random Forest" algorithm was applied. Using **randomForest** function, cross-validation of 10 K-fold ran 10 times by splitting downloaded training data to 90% of training and 10% of testing. Then, out of sample error was calculated 10 times and the mean of out of sample error from 10 times cross-validation was also calculated. This would be expected in prediction. It is significantly low, therefore "Random Forest" algorithm was chosen. 
+
+```{r pml5, echo=TRUE, results='show', warning=FALSE,message=FALSE}
+library(randomForest)
+ose <- vector(mode="numeric", length=10)
+for(i in 1:10) {
+  inTrain = createDataPartition(rtrain3$classe, p = 0.9, list=FALSE)
+  strain = rtrain3[ inTrain,]
+  stest = rtrain3[-inTrain,]
+  fit <-randomForest(strain$classe ~ ., data=strain)
+  confusionMatrix(stest$classe, predict(fit, stest))
+  ose[i] <- 1-confusionMatrix(stest$classe, predict(fit, stest))$overall[1]
+}
+paste("mean of out of sample error:", round(100*mean(ose),2), "%") 
+
+```
+
+**3. Prediction of testing data**
+The final model was built from applying "Rain Forest" algorithm(randomForest function) to downloaded training data (`r nrow(rtrain)` records). After testing data was downloaded and cleaned to the same format of training data, predict function was applied to predict.
+```{r pml6, echo=TRUE, results='show', warning=FALSE,message=FALSE}
+fit2 <-randomForest(rtrain3$classe ~ ., data=rtrain3)
+fit2
+download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", ".\\data\\pml-testing.csv")
+rtrain2 <- rtrain[,which(names(rtrain) %in% gvar)]
+rtest <-  read.csv(".\\data\\pml-testing.csv",na.strings=c('','NA','#DIV/0!'))
+rtest2 <- rtest[,which(names(rtest) %in% gvar)]
+rtest3 <- rtest2[c(8:59)]
+predict(fit2, rtest3)
+```
